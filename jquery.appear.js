@@ -15,9 +15,12 @@
   var check_lock = false;
   var defaults = {
     interval: 250,
-    force_process: false
+    force_process: false,
+    support_seamless_iframes: false
   };
   var $window = $(window);
+  var $iframe;
+  var iframe_offset;
 
   var $prior_appeared = [];
 
@@ -42,7 +45,7 @@
     selectors.push(selector);
     $prior_appeared.push();
   }
-
+  
   // "appeared" custom filter
   $.expr[':']['appeared'] = function(element) {
     var $element = $(element);
@@ -50,16 +53,57 @@
       return false;
     }
 
-    var window_left = $window.scrollLeft();
-    var window_top = $window.scrollTop();
+    var viewport_left = $window.scrollLeft();
+    var viewport_right = viewport_left + $window.width();
+    var viewport_top = $window.scrollTop();
+    var viewport_bottom = viewport_top + $window.height();
     var offset = $element.offset();
     var left = offset.left;
     var top = offset.top;
+        
+    if ($iframe) {
+      // handle the iframe being all or partially out of the top window's viewport
+      var top_window_top = $(window.top).scrollTop();
+      var top_window_bottom = top_window_top + $(window.top).height();
+      var top_window_left = $(window.top).scrollLeft();
+      var top_window_right = top_window_left + $(window.top).width();			
+      var iframe_top = iframe_offset.top;
+      var iframe_bottom = iframe_top + $iframe.height();
+      var iframe_left = iframe_offset.left;
+      var iframe_right = iframe_left + $iframe.width();
+      
+      if (top_window_top > iframe_bottom || // iframe is above the top window's viewport
+          iframe_top > top_window_bottom || // iframe is below the top window's viewport
+          top_window_left > iframe_right || // iframe is left of the top window's viewport
+          iframe_left > top_window_right) { // iframe is right of the top window's viewport
+        return false;
+      }
+      
+      if (top_window_top > iframe_top) { 
+        // the top of the iframe is outside of the top window's viewport, adjust to account for what is not visible
+        viewport_top += (top_window_top - iframe_top);
+      }
+      
+      if (iframe_bottom > top_window_bottom) {
+        // the bottom of the iframe is outside of the top window's viewport, adjust to account for what is not visible
+        viewport_bottom -= (iframe_bottom - top_window_bottom);
+      }
+      
+      if(top_window_left > iframe_left){
+        // the left of the iframe is outside of the top window's viewport, adjust to account for what is not visible
+        viewport_left += (top_window_left - iframe_left);
+      }
+      
+      if(iframe_right > top_window_right){
+        // the right of the iframe is outside of the top window's viewport, adjust to account for what is not visible
+        viewport_right -= (iframe_right - top_window_right);
+      }
+    }
 
-    if (top + $element.height() >= window_top &&
-        top - ($element.data('appear-top-offset') || 0) <= window_top + $window.height() &&
-        left + $element.width() >= window_left &&
-        left - ($element.data('appear-left-offset') || 0) <= window_left + $window.width()) {
+    if (top + $element.height() >= viewport_top &&
+        top - ($element.data('appear-top-offset') || 0) <= viewport_bottom &&
+        left + $element.width() >= viewport_left &&
+        left - ($element.data('appear-left-offset') || 0) <= viewport_right) {
       return true;
     } else {
       return false;
@@ -80,8 +124,14 @@
 
           setTimeout(process, opts.interval);
         };
-
-        $(window).scroll(on_check).resize(on_check);
+                
+        if (opts.support_seamless_iframes && window.frameElement) {
+          $iframe = $(window.frameElement);
+          iframe_offset = $iframe.offset();
+          $(window.top).scroll(on_check).resize(on_check);
+        } else {
+          $(window).scroll(on_check).resize(on_check);
+        }
         check_binded = true;
       }
 
